@@ -10,7 +10,7 @@ import twilio from 'twilio';
  * Clients
  */
 const app = express();
-app.use(bodyParser.json())
+app.use(bodyParser.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 8080;
 
@@ -45,7 +45,6 @@ app.post('/sms', async (req, res) => {
 
 app.post('/voice', async (req, res) => {
   const {originalUrl, headers, body} = req;
-  console.log(body);
   const { VoiceResponse } = twilio.twiml;
 
   const response = new VoiceResponse();
@@ -54,6 +53,12 @@ app.post('/voice', async (req, res) => {
     length: 2
   });
   response.say('Please wait while I connect you to the next available agent.');
+
+  const {CallSid, From, To} = body;
+
+  // Kick Off a Temporal Workflow
+
+  console.log(CallSid, From, To);
   res.send(response.toString());
 });
 
