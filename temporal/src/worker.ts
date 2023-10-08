@@ -2,11 +2,21 @@ import 'dotenv/config';
 import fs from 'fs';
 
 import { Worker, NativeConnection, Runtime } from '@temporalio/worker';
+import { Connection, WorkflowClient } from '@temporalio/client';
 import { getDataConverter } from './encryption/data-converter';
 import * as activities from './sharable-activites/index';
 
+/**
+ * Twilio
+ */
 import { createTwilioActivites } from './sharable-activites/twilio/activites';
 import { TwilioClient } from './sharable-activites/twilio/client'
+
+/**
+ * Temporal
+ */
+import { createTemporalActvites } from './sharable-activites/temporal/activites';
+import { TemporalClient } from './sharable-activites/temporal/client';
 
 /**
  * Run a Worker with an mTLS connection, configuration is provided via environment variables.
@@ -68,13 +78,28 @@ async function run({
   
   const targetNamespace = isMTLS ? namespace : 'default';
 
+  /**
+   * Twilio
+   */
   const {TWILIO_ACCOUNT_SID = '', TWILIO_API_KEY = '', TWILIO_API_KEY_SECRET = '', TWILIO_DEFAULT_PHONE_NUMBER=''} = process.env;
   const twilioClient = new TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_API_KEY, TWILIO_API_KEY_SECRET, TWILIO_DEFAULT_PHONE_NUMBER);
   const twilioActivites = createTwilioActivites(twilioClient);
 
+  /**
+   * Temporal
+   */
+  const temporalConnection = await Connection.connect(connectionOption);
+  const temporalWorkflowClient = new WorkflowClient({
+    connection: temporalConnection,
+    ...(isMTLS && { namespace: targetNamespace })
+  });
+
+  const temporalClient = new TemporalClient(temporalWorkflowClient, temporalConnection, targetNamespace);
+  const temporalActivites = createTemporalActvites(temporalClient);
+
   const worker = await Worker.create({
     connection,
-    activities: {...activities, ...twilioActivites},
+    activities: {...activities, ...twilioActivites, ...temporalActivites},
     taskQueue,
     namespace: targetNamespace,
     ...workflowOption(),

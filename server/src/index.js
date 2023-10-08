@@ -8,6 +8,9 @@ import twilio from 'twilio';
 import { Connection, WorkflowClient } from '@temporalio/client';
 import fs from 'fs';
 
+export const ROUTING_ROUND_ROBIN = 'routing-round-robin';
+export const ROUTING_FREE_FOR_ALL = 'routing-free-for-all';
+
 /**
  * Clients
  */
@@ -56,6 +59,8 @@ app.post('/voice', async (req, res) => {
 
   const {CallSid, From, To} = body;
 
+  const Routing = To === process.env.TWILIO_FREE_FOR_ALL_PHONE_NUMBER ? ROUTING_FREE_FOR_ALL : ROUTING_ROUND_ROBIN;
+
   // Kick Off a Temporal Workflow
   const isMTLS = process.env.TEMPORAL_MTLS === 'true';
   let connection;
@@ -82,7 +87,7 @@ app.post('/voice', async (req, res) => {
   await temporalClient.start('taskWorkflow', {
     taskQueue: process.env.TEMPORAL_TASK_QUEUE,
     workflowId: CallSid,
-    args: [{CallSid, From, To}],
+    args: [{CallSid, From, To, Routing}],
     searchAttributes: {
       TaskRouterState: ['Pending']
     }

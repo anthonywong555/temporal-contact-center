@@ -1,7 +1,8 @@
 export type Task = {
   CallSid: string,
   From: string,
-  To: string
+  To: string,
+  Routing: string,
 }
 
 export type TaskWorkflowParams = {
@@ -10,6 +11,12 @@ export type TaskWorkflowParams = {
 
 export type AgentAction = {
   agentId: string,
+  agentPhoneNumber: string,
   isAccept: boolean,
   isTimeout: boolean
+}
+
+export type AgentWorkflowParams = {
+  agentId: string,
+  agentPhoneNumber: string
 }
