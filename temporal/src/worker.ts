@@ -5,6 +5,9 @@ import { Worker, NativeConnection, Runtime } from '@temporalio/worker';
 import { getDataConverter } from './encryption/data-converter';
 import * as activities from './sharable-activites/index';
 
+import { createTwilioActivites } from './sharable-activites/twilio/activites';
+import { TwilioClient } from './sharable-activites/twilio/client'
+
 /**
  * Run a Worker with an mTLS connection, configuration is provided via environment variables.
  * Note that serverNameOverride and serverRootCACertificate are optional.
@@ -65,9 +68,13 @@ async function run({
   
   const targetNamespace = isMTLS ? namespace : 'default';
 
+  const {TWILIO_ACCOUNT_SID = '', TWILIO_API_KEY = '', TWILIO_API_KEY_SECRET = '', TWILIO_DEFAULT_PHONE_NUMBER=''} = process.env;
+  const twilioClient = new TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_API_KEY, TWILIO_API_KEY_SECRET, TWILIO_DEFAULT_PHONE_NUMBER);
+  const twilioActivites = createTwilioActivites(twilioClient);
+
   const worker = await Worker.create({
     connection,
-    activities,
+    activities: {...activities, ...twilioActivites},
     taskQueue,
     namespace: targetNamespace,
     ...workflowOption(),

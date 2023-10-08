@@ -5,6 +5,8 @@ import 'dotenv/config';
 import express from 'express';
 import bodyParser from 'body-parser';
 import twilio from 'twilio';
+import { Connection, WorkflowClient } from '@temporalio/client';
+import fs from 'fs';
 
 /**
  * Clients
@@ -49,14 +51,39 @@ app.post('/voice', async (req, res) => {
 
   const response = new VoiceResponse();
   response.say('Thank you for calling Temporal Support.');
-  response.pause({
-    length: 2
-  });
   response.say('Please wait while I connect you to the next available agent.');
+  response.play(process.env.TWILIO_HOLD_MUSIC);
 
   const {CallSid, From, To} = body;
 
   // Kick Off a Temporal Workflow
+  const isMTLS = process.env.TEMPORAL_MTLS === 'true';
+  let connection;
+
+  if(isMTLS) {
+    connection = await Connection.connect({
+        address: process.env.TEMPORAL_ADDRESS,
+        tls: {
+            clientCertPair: {
+                crt: fs.readFileSync(process.env.TEMPORAL_TLS_CERT),
+                key: fs.readFileSync(process.env.TEMPORAL_TLS_KEY)
+            }
+        }
+    });
+  } else {
+    connection = await Connection.connect();
+  }
+
+  const temporalClient = new WorkflowClient({
+    connection,
+    ...(isMTLS && { namespace: process.env.TEMPORAL_NAMESPACE })
+  });
+
+  await temporalClient.start('taskWorkflow', {
+    taskQueue: process.env.TEMPORAL_TASK_QUEUE,
+    workflowId: CallSid,
+    args: [{CallSid, From, To}]
+  });
 
   console.log(CallSid, From, To);
   res.send(response.toString());

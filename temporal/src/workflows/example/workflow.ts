@@ -6,14 +6,7 @@ const { greet } = proxyActivities<typeof activities>({
   startToCloseTimeout: '1 minute',
 });
 
-type Task = {
-  CallSid: string,
-  From: string,
-  To: string
-}
-
 /** A workflow that simply calls an activity */
-export async function taskWorkflow(task: Task): Promise<string> {
-  console.log(task);
-  return await greet('Hello World');
+export async function example(name: string): Promise<string> {
+  return await greet(name);
 }
