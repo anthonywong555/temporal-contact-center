@@ -131,3 +131,5 @@ dist
 
 # Temporal MTLS Certificates
 certs
+
+tools/client

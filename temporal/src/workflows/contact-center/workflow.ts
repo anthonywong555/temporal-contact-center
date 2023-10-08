@@ -1,7 +1,8 @@
-import { SearchAttributes, condition, proxyActivities, upsertSearchAttributes, workflowInfo, defineSignal, setHandler, sleep } from '@temporalio/workflow';
+import { SearchAttributes, condition, proxyActivities, upsertSearchAttributes, workflowInfo, defineSignal, setHandler, sleep, startChild, getExternalWorkflowHandle, CancellationScope,
+  CancelledFailure, defineQuery } from '@temporalio/workflow';
 import { createTwilioActivites } from '../../sharable-activites/twilio/activites';
 import { createTemporalActvites } from '../../sharable-activites/temporal/activites';
-import { AgentAction, AgentWorkflowParams, Task } from './types';
+import { AgentAction, AgentWorkflowParams, Task, TaskReservedWorkflowParams } from './types';
 
 const { twilioCallUpdate } = proxyActivities<ReturnType<typeof createTwilioActivites>>({
   startToCloseTimeout: '1 minute',
@@ -24,6 +25,8 @@ export const ROUTING_FREE_FOR_ALL = 'routing-free-for-all';
 
 /** A workflow that simply calls an activity */
 export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
+  const { workflowId } = workflowInfo();
+
   // For Demo Sake
   await sleep('30 second');
 
@@ -31,13 +34,15 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
   let acceptedAgent = '';
   let isAssigned = false;
   let twiml;
+  let targetAgentPhoneNumber ;
 
   // Signal Handler
-  setHandler(AgentActionSignal, ({ agentId, isAccept, isTimeout }: AgentAction) => {
+  setHandler(AgentActionSignal, ({ agentId, isAccept, isTimeout, agentPhoneNumber }: AgentAction) => {
     if(!isAssigned && isAccept) {
       // An Agent Accepted this Task.
       isAssigned = true;
       acceptedAgent = agentId;
+      targetAgentPhoneNumber = agentPhoneNumber;
 
       upsertSearchAttributes({
         TaskRouterAgent: [agentId],
@@ -52,10 +57,8 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
 
   // Query for Active Agents
   const agentWorkflows = await listWorkflowExecutions({
-    query: `ExecutionStatus = "Running" and WorkflowType='AgentWorkflow'`
+    query: `ExecutionStatus = "Running" and WorkflowType='agentWorkflow'`
   });
-
-  console.log(agentWorkflows);
 
   if(!agentWorkflows.executions) {
     // There is no agent online.
@@ -68,38 +71,81 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
     return workflowInfo().searchAttributes;
   }
 
-  // Create Reserve Workflow
-  if(Routing === ROUTING_FREE_FOR_ALL) {
-    
-  } else if(Routing === ROUTING_ROUND_ROBIN) {
-    
-  }
-
-  return workflowInfo().searchAttributes;
-
   // Set the Task State.
   upsertSearchAttributes({
     TaskRouterState: ['Reserved']
   });
+
+  let reservesWorkflows;
+
+  // Create Reserve Workflow
+  if(Routing === ROUTING_FREE_FOR_ALL) {
+    // Create Child Workflows for all the active agents
+    reservesWorkflows = agentWorkflows.executions.map(async (anExecution) => {
+      const agentId = anExecution.execution.workflowId;
+      return await startChild(taskReservedWorkflow, {
+        args: [{
+          CallSid: workflowId,
+          agentId: agentId
+        }],
+        workflowId: `${workflowId}-${agentId}-reserve`,
+        searchAttributes: {
+          'TaskRouterAgent': [agentId]
+        }
+      });
+    });
+
+    await Promise.all(reservesWorkflows);
+  } else if(Routing === ROUTING_ROUND_ROBIN) {
+    // Create a Child Workflow for an agent
+  }
   
   if(await condition(() => isAssigned, '5 minute')) {
+    // Terminate reserve workflows
+    await Promise.all(reservesWorkflows.map(async (aReservedWorkflow) => {
+      const { workflowId } = await aReservedWorkflow;
+      const handle = getExternalWorkflowHandle(workflowId);
+      try {
+        return await handle.cancel();
+      } catch(e) {
+        console.log(`ERROR MESSAGE:`);
+        console.log(e);
+      }
+    }));
+
     // Connect the Call
-    const twiml = '<Response><Dial>+155555555</Dial></Response>';
+    twiml = `<Response><Say>You will now speak to ${acceptedAgent}.</Say><Dial>${targetAgentPhoneNumber}</Dial></Response>`;
     const result = await twilioCallUpdate({ CallSid, twiml });
-    console.log(result);
   } else {
+    twiml = `<Response><Say>Sorry. It looks like all other agents are busy. Please try again later.</Say></Response>`;
+    await twilioCallUpdate({ CallSid, twiml });
     // Time has elapsed!
     upsertSearchAttributes({
       TaskRouterState: ['Canceled']
     });
   }
 
-  //return workflowInfo().searchAttributes;
+  return workflowInfo().searchAttributes;
 }
 
-export async function taskReservedWorkflow(task: Task): Promise<String> {
+export const getCallSidQuery = defineQuery<string>('getCallSid');
 
-  return '';
+export async function taskReservedWorkflow(task: TaskReservedWorkflowParams): Promise<void> {
+  // Timers and Activities are automatically cancelled when their containing scope is cancelled.
+  try {
+    await CancellationScope.cancellable(async () => {
+      const { CallSid, agentId } = task;
+
+      setHandler(getCallSidQuery, () => CallSid);
+      await sleep('120 minute');
+    });
+  } catch (e) {
+    if (e instanceof CancelledFailure) {
+      console.log('Timer cancelled 👍');
+    } else {
+      throw e; // <-- Fail the workflow
+    }
+  }
 }
 
 export async function agentWorkflow(agent: AgentWorkflowParams): Promise<null> {

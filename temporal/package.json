@@ -7,7 +7,8 @@
         "build.watch": "tsc --build --watch",
         "build:workflow": "ts-node tools/scripts/build-workflow-bundle.ts",
         "worker": "ts-node src/worker.ts",
-        "worker.watch": "nodemon src/worker.ts"
+        "worker.watch": "nodemon src/worker.ts",
+        "agent": "ts-node tools/client/index.ts"
     },
     "dependencies": {
         "@temporalio/activity": "^1.8.4",
