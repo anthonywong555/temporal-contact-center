@@ -1,5 +1,6 @@
-import { proxyActivities, sleep } from '@temporalio/workflow';
+import { SearchAttributes, condition, proxyActivities, upsertSearchAttributes, workflowInfo, defineSignal, setHandler } from '@temporalio/workflow';
 import { createTwilioActivites } from '../../sharable-activites/twilio/activites'
+import { AgentAction, Task } from './types';
 
 const { twilioCallUpdate } = proxyActivities<ReturnType<typeof createTwilioActivites>>({
   startToCloseTimeout: '1 minute',
@@ -8,21 +9,53 @@ const { twilioCallUpdate } = proxyActivities<ReturnType<typeof createTwilioActiv
   }
 });
 
-type Task = {
-  CallSid: string,
-  From: string,
-  To: string
-}
+export const AgentActionSignal = defineSignal<[AgentAction]>('agentAction');
 
 /** A workflow that simply calls an activity */
-export async function taskWorkflow(task: Task): Promise<string> {
+export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
   const { CallSid } = task;
-  await sleep('15 second');
-  // Front-End Work
+  let acceptedAgent = '';
+  let isAssigned = false;
+
+  // Signal Handler
+  setHandler(AgentActionSignal, ({ agentId, isAccept, isTimeout }: AgentAction) => {
+    if(!isAssigned && isAccept) {
+      // An Agent Accepted this Task.
+      isAssigned = true;
+      acceptedAgent = agentId;
+
+      upsertSearchAttributes({
+        TaskRouterAgent: [agentId],
+        TaskRouterState: ['Assigned']
+      });
+    }
+  });
+
+  // Retrieve Call Routing Rules
+
+  // Create Reserve Workflow
+
+  // Set the Task State.
+  upsertSearchAttributes({
+    TaskRouterState: ['Reserved']
+  });
   
-  // Connect the Call
-  const twiml = '<Response><Dial>+155555555</Dial></Response>';
-  const result = await twilioCallUpdate({ CallSid, twiml });
-  console.log(result);
-  return "";
+  if(await condition(() => isAssigned, '5 minute')) {
+    // Connect the Call
+    const twiml = '<Response><Dial>+155555555</Dial></Response>';
+    const result = await twilioCallUpdate({ CallSid, twiml });
+    console.log(result);
+  } else {
+    // Time has elapsed!
+    upsertSearchAttributes({
+      TaskRouterState: ['Canceled']
+    });
+  }
+
+  return workflowInfo().searchAttributes;
+}
+
+export async function taskReservedWorkflow(task: Task): Promise<String> {
+  
+  return '';
 }
