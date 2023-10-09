@@ -32,12 +32,15 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
 
   const { CallSid, Routing } = task;
   let acceptedAgent = '';
+  let gotAgentAction = false;
   let isAssigned = false;
   let twiml;
   let targetAgentPhoneNumber ;
 
   // Signal Handler
   setHandler(AgentActionSignal, ({ agentId, isAccept, isTimeout, agentPhoneNumber }: AgentAction) => {
+    gotAgentAction = true;
+
     if(!isAssigned && isAccept) {
       // An Agent Accepted this Task.
       isAssigned = true;
@@ -76,7 +79,7 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
     TaskRouterState: ['Reserved']
   });
 
-  let reservesWorkflows;
+  let reservesWorkflows: any[] = [];
 
   // Create Reserve Workflow
   if(Routing === ROUTING_FREE_FOR_ALL) {
@@ -96,11 +99,45 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
     });
 
     await Promise.all(reservesWorkflows);
+    await condition(() => isAssigned, '5 minute');
   } else if(Routing === ROUTING_ROUND_ROBIN) {
     // Create a Child Workflow for an agent
+    const {executions} = agentWorkflows;
+    for(const anAgentWorkflow of executions) {
+      console.log(`anAgentWorkflow`, anAgentWorkflow);
+      const agentId = anAgentWorkflow.execution.workflowId;
+      const agentReservedWorkflow = await startChild(taskReservedWorkflow, {
+        args: [{
+          CallSid: workflowId,
+          agentId: agentId
+        }],
+        workflowId: `${workflowId}-${agentId}-reserve`,
+        searchAttributes: {
+          'TaskRouterAgent': [agentId]
+        }
+      });
+
+      await condition(() => gotAgentAction, '5 minute');
+
+      if(isAssigned) {
+        // Agent pick up the task.
+        reservesWorkflows = [...reservesWorkflows, agentReservedWorkflow];
+        break;
+      } else {
+        gotAgentAction = false;
+        // Terminal the child workflow.
+        const handle = getExternalWorkflowHandle(agentReservedWorkflow.workflowId);
+        try {
+          await handle.cancel();
+        } catch(e) {
+          console.log(`ERROR MESSAGE:`);
+          console.log(e);
+        }
+      }
+    }
   }
   
-  if(await condition(() => isAssigned, '5 minute')) {
+  if(isAssigned) {
     // Terminate reserve workflows
     await Promise.all(reservesWorkflows.map(async (aReservedWorkflow) => {
       const { workflowId } = await aReservedWorkflow;
