@@ -1,4 +1,4 @@
-import { Connection, WorkflowClient, } from '@temporalio/client';
+import { Connection, WorkflowClient, WorkflowHandle, } from '@temporalio/client';
 
 export class TemporalClient {
   client: WorkflowClient;
@@ -16,5 +16,9 @@ export class TemporalClient {
       request.namespace = this.namespace;
     }
     return await this.connnection.workflowService.listWorkflowExecutions(request);
+  }
+
+  async signalWithStart(workflow: string, params: any): Promise<WorkflowHandle> {
+    return this.client.signalWithStart(`${workflow}`, params);
   }
 }
