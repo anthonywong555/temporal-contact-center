@@ -48,6 +48,25 @@ app.post('/sms', async (req, res) => {
     res.send("<Response><Message></Message><Response/>");
 });
 
+app.post('/voice-status', async(req, res) => {
+  const { body } = req;
+  const {CallStatus, CallSid} = body;
+
+  if(CallStatus) {
+    try {
+      // Signal the Workflow
+      console.log(CallStatus);
+      const temporalClient = await getTemporalClient(); 
+      const handle = temporalClient.getHandle(CallSid);
+      await handle.signal('updateCallStatus', CallStatus);
+    } catch(e) {
+      // Silent Fail
+    }
+  }
+
+  res.send({"status": "ok"});
+})
+
 app.post('/voice', async (req, res) => {
   const {originalUrl, headers, body} = req;
   const { VoiceResponse } = twilio.twiml;
@@ -61,6 +80,19 @@ app.post('/voice', async (req, res) => {
 
   const Routing = To === process.env.TWILIO_FREE_FOR_ALL_PHONE_NUMBER ? ROUTING_FREE_FOR_ALL : ROUTING_ROUND_ROBIN;
 
+  const temporalClient = await getTemporalClient(); 
+
+  await temporalClient.start('taskWorkflow', {
+    taskQueue: process.env.TEMPORAL_TASK_QUEUE,
+    workflowId: CallSid,
+    args: [{CallSid, From, To, Routing}]
+  });
+
+  console.log(CallSid, From, To);
+  res.send(response.toString());
+});
+
+const getTemporalClient = async () => {
   // Kick Off a Temporal Workflow
   const isMTLS = process.env.TEMPORAL_MTLS === 'true';
   let connection;
@@ -83,18 +115,8 @@ app.post('/voice', async (req, res) => {
     connection,
     ...(isMTLS && { namespace: process.env.TEMPORAL_NAMESPACE })
   });
-
-  await temporalClient.start('taskWorkflow', {
-    taskQueue: process.env.TEMPORAL_TASK_QUEUE,
-    workflowId: CallSid,
-    args: [{CallSid, From, To, Routing}],
-    searchAttributes: {
-      TaskRouterState: ['Pending']
-    }
-  });
-
-  console.log(CallSid, From, To);
-  res.send(response.toString());
-});
+  
+  return temporalClient;
+}
 
 app.listen(PORT, () => console.log(`Listening on ${PORT}.\nNode Environment is on ${process.env.NODE_ENV} mode.`));
