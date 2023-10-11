@@ -6,7 +6,7 @@ import { AgentStatus, CallStatus, CustomerAgentWorkflowParams, Task, Agent, Call
 const { twilioCallUpdate } = proxyActivities<ReturnType<typeof createTwilioActivites>>({
   startToCloseTimeout: '1 minute',
   retry: {
-    maximumAttempts: 3
+    maximumAttempts: 1
   }
 });
 
@@ -67,11 +67,15 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
       
       // Agent is now free.
       const callPoolHandle = getExternalWorkflowHandle(CALL_POOL_WORKFLOW_ID);
-      await callPoolHandle.signal(addAgentSignal, assignedAgent);
+      const agentName = assignedAgent ? assignedAgent.name  : '';
+
+      if(assignedAgent) {
+        await callPoolHandle.signal(addAgentSignal, assignedAgent);
+      }
 
       await callPoolHandle.signal(updateCallSignal, {
         sid: workflowId, 
-        agent: assignedAgent.name,
+        agent: agentName,
         status: CallStatus.completed,
         caller: From
       });
@@ -85,7 +89,11 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
   } else {
     // Update the customer that there are no available agents.
     twiml = `<Response><Say>Sorry. It looks like all other agents are busy. Please try again later.</Say></Response>`;
-    await twilioCallUpdate({ CallSid, twiml });
+    try {
+      await twilioCallUpdate({ CallSid, twiml });
+    } catch(e) {
+      console.log(`Soft Error: ${e}`);
+    }
     // Time has elapsed!
     upsertSearchAttributes({
       TaskRouterState: ['Canceled']
@@ -107,6 +115,7 @@ export async function customerAgentWorkflow(payload: CustomerAgentWorkflowParams
  * Queries 
  */
 export const getAvailableAgentsQuery = defineQuery<Array<Agent> | undefined>('available_agents');
+export const getAgentsQuery = defineQuery<Array<Agent> | undefined>('agent');
 export const getCallsQuery = defineQuery<Array<Call | undefined>>('calls');
 
 /**
@@ -118,11 +127,17 @@ export const addPendingCallSignal = defineSignal<[Call]>('addPendingCall');
 export const updateCallSignal = defineSignal<[Call]>('updateCall');
 
 export async function callPoolWorkflow({agents, calls}: CallPoolWorkflowParams = {agents: [], calls : []}): Promise<void> {
+  let shouldContinueAsNew = false;
+
   /**
    * Queries
    */
   setHandler(getAvailableAgentsQuery, () => {
     return agents?.filter((anAgent) => anAgent.status === AgentStatus.available);
+  });
+
+  setHandler(getAgentsQuery, () => {
+    return agents;
   });
   
   setHandler(getCallsQuery, () => {
@@ -183,12 +198,16 @@ export async function callPoolWorkflow({agents, calls}: CallPoolWorkflowParams =
 
       const callWorkflowHandle = getExternalWorkflowHandle(targetCall.sid);
       await callWorkflowHandle.signal(agentAssignSignal, targetAgent);
+
+      shouldContinueAsNew = workflowInfo().continueAsNewSuggested;
     }
   });
 
   setHandler(removeAgentSignal, (anAgent: Agent) => {
     const { name } = anAgent;
     agents = agents?.filter((anAgent) => anAgent.name != name);
+
+    shouldContinueAsNew = workflowInfo().continueAsNewSuggested;
   });
 
   setHandler(addPendingCallSignal, async (aCall: Call) => {
@@ -222,6 +241,8 @@ export async function callPoolWorkflow({agents, calls}: CallPoolWorkflowParams =
 
       const callWorkflowHandle = getExternalWorkflowHandle(targetCall.sid);
       await callWorkflowHandle.signal(agentAssignSignal, targetAgent);
+
+      shouldContinueAsNew = workflowInfo().continueAsNewSuggested;
     }
   });
 
@@ -231,9 +252,11 @@ export async function callPoolWorkflow({agents, calls}: CallPoolWorkflowParams =
         aCall = targetCall;
       }
       return aCall;
-    })
+    });
+
+    shouldContinueAsNew = workflowInfo().continueAsNewSuggested;
   })
 
-  await sleep('1 Day');
+  await condition(() => shouldContinueAsNew, '1 Day');
   await continueAsNew<typeof callPoolWorkflow>({agents, calls});
 }

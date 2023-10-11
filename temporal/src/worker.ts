@@ -98,6 +98,7 @@ async function run({
   const temporalActivites = createTemporalActvites(temporalClient);
 
   const worker = await Worker.create({
+    reuseV8Context: true,
     connection,
     activities: {...activities, ...twilioActivites, ...temporalActivites},
     taskQueue,
