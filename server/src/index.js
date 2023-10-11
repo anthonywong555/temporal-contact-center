@@ -85,7 +85,7 @@ app.post('/voice', async (req, res) => {
   await temporalClient.start('taskWorkflow', {
     taskQueue: process.env.TEMPORAL_TASK_QUEUE,
     workflowId: CallSid,
-    args: [{CallSid, From, To, Routing}]
+    args: [{CallSid, From, To, Routing, TemporalTaskQueue: process.env.TEMPORAL_TASK_QUEUE}]
   });
 
   console.log(CallSid, From, To);

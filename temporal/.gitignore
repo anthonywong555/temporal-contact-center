@@ -133,3 +133,5 @@ dist
 certs
 
 tools/client
+
+lib

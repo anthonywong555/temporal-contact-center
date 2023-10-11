@@ -29,7 +29,7 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
   await sleep('10 sec');
 
   const { workflowId } = workflowInfo();
-  const {CallSid, From} = task;
+  const {CallSid, From, TemporalTaskQueue} = task;
   let assignedAgent:Agent;
   let isAssign = false;
   let isCompleted = false;
@@ -38,7 +38,8 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
   // Let the Call Pool Know that there's an available Call.
   await signalWithStart('callPoolWorkflow', {
     workflowId: CALL_POOL_WORKFLOW_ID,
-    taskQueue: 'twilio-demo',
+    // Pass the Taskqueue 
+    taskQueue: TemporalTaskQueue,
     signal: addPendingCallSignal,
     signalArgs: [{status: CallStatus.pending, sid: workflowId, caller: From}]
   });
