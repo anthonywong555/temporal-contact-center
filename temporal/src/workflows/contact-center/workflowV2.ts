@@ -115,7 +115,7 @@ export async function customerAgentWorkflow(payload: CustomerAgentWorkflowParams
  * Queries 
  */
 export const getAvailableAgentsQuery = defineQuery<Array<Agent> | undefined>('available_agents');
-export const getAgentsQuery = defineQuery<Array<Agent> | undefined>('agent');
+export const getAgentsQuery = defineQuery<Array<Agent> | undefined>('agents');
 export const getCallsQuery = defineQuery<Array<Call | undefined>>('calls');
 
 /**
