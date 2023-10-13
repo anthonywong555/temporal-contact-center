@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-call-center-worker
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 3
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: temporal-call-center-worker
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: temporal-call-center-worker
+    spec:
+      containers:
+      - env:
+        - name: TWILIO_ACCOUNT_SID
+          valueFrom:
+            secretKeyRef:
+              key: TWILIO_ACCOUNT_SID
+              name: twilio-secret
+        - name: TWILIO_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: TWILIO_AUTH_TOKEN
+              name: twilio-secret
+        - name: TWILIO_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: TWILIO_API_KEY
+              name: twilio-secret
+        - name: TWILIO_API_KEY_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: TWILIO_API_KEY_SECRET
+              name: twilio-secret
+        - name: TWILIO_HOLD_MUSIC
+          value: https://cobalt-hawk-8857.twil.io/assets/hold-music.mp3
+        - name: TWILIO_PHONE_NUMBER
+          value: "+18145243366"
+        - name: TEMPORAL_ADDRESS
+          value: temporal-call-center.sdvdw.tmprl.cloud:7233
+        - name: TEMPORAL_TASK_QUEUE
+          value: twilio
+        - name: TEMPORAL_NAMESPACE
+          value: temporal-call-center.sdvdw
+        - name: TEMPORAL_MTLS
+          value: "true"
+        - name: TEMPORAL_TLS_CERT
+          value: /etc/certs/tls.crt
+        - name: TEMPORAL_TLS_KEY
+          value: /etc/certs/tls.key
+        image: ktenzer/temporal-call-center-worker:v1.2
+        imagePullPolicy: Always
+        readinessProbe:
+          exec:
+            command:
+            - ls
+            - /
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1          
+        livenessProbe:
+          exec:
+            command:
+            - ls
+            - /
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: temporal-call-center-worker
+        resources:
+          limits:
+            cpu: 500m
+            memory: 500Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/certs
+          name: certs
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: certs
+        secret:
+          defaultMode: 420
+          secretName: temporal-call-center-tls
+
