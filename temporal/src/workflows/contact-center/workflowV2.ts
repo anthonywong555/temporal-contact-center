@@ -94,10 +94,6 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
     } catch(e) {
       console.log(`Soft Error: ${e}`);
     }
-    // Time has elapsed!
-    upsertSearchAttributes({
-      TaskRouterState: ['Canceled']
-    });
   }
 
   return workflowInfo().searchAttributes;
