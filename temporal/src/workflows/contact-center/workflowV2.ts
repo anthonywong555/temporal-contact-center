@@ -25,15 +25,21 @@ export const updateCallStatusSignal = defineSignal<[string]>('updateCallStatus')
 //export const ROUTING_FREE_FOR_ALL = 'routing-free-for-all';
 
 export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
-  // Sleeping for demo
-  await sleep('10 sec');
-
   const { workflowId } = workflowInfo();
-  const {CallSid, From, TemporalTaskQueue} = task;
+  const {CallSid, From, TemporalTaskQueue, CallDelay} = task;
   let assignedAgent:Agent;
   let isAssign = false;
   let isCompleted = false;
   let twiml = '';
+
+  if(CallDelay) {
+    // Sleeping for demo
+    await sleep(CallDelay);
+  }
+
+  upsertSearchAttributes({
+    Call_Status: ['pending']
+  });
 
   // Let the Call Pool Know that there's an available Call.
   await signalWithStart('callPoolWorkflow', {
@@ -48,18 +54,15 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
     isAssign = true;
     assignedAgent = anAgent;
 
-    await startChild(customerAgentWorkflow, {
-      args: [{
-        agent: anAgent,
-        customer: {
-          status: CallStatus.active,
-          sid: workflowId,
-          caller: From,
-          agent: anAgent.name
-        }
-      }],
-      workflowId: `${workflowId}-${anAgent.name}`
+    const { name, number } = anAgent;
+
+    upsertSearchAttributes({
+      Agent: [name],
+      Call_Status: ['active']
     });
+
+    let twiml = `<Response><Say>You will now speak to ${name}.</Say><Dial>${number}</Dial></Response>`;
+    await twilioCallUpdate({ CallSid, twiml });
   });
 
   setHandler(updateCallStatusSignal, async (callstatus: string) => {
@@ -85,7 +88,9 @@ export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
   })
 
   if(await condition(() => isCompleted, '5 min')) {
-    // Do nothing
+    upsertSearchAttributes({
+      Call_Status: ['completed']
+    });
   } else {
     // Update the customer that there are no available agents.
     twiml = `<Response><Say>Sorry. It looks like all other agents are busy. Please try again later.</Say></Response>`;

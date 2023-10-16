@@ -3,7 +3,8 @@ export type Task = {
   From: string,
   To: string,
   Routing: string,
-  TemporalTaskQueue?: string
+  TemporalTaskQueue?: string,
+  CallDelay?: string
 }
 
 export type TaskWorkflowParams = {
