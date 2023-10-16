@@ -1,2 +1,2 @@
-export * from './example/workflow';
-export * from './contact-center/workflowV2';
+export * from './contact-center/callPoolWorkflow';
+export * from './contact-center/taskWorkflow';
