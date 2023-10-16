@@ -26,15 +26,15 @@ export const updateCallStatusSignal = defineSignal<[string]>('updateCallStatus')
 
 export async function taskWorkflow(task: Task): Promise<SearchAttributes> {
   const { workflowId } = workflowInfo();
-  const {CallSid, From, TemporalTaskQueue, CallDelay} = task;
+  const {CallSid, From, TemporalTaskQueue, isCallDelay} = task;
   let assignedAgent:Agent;
   let isAssign = false;
   let isCompleted = false;
   let twiml = '';
 
-  if(CallDelay) {
+  if(isCallDelay) {
     // Sleeping for demo
-    await sleep(CallDelay);
+    await sleep('10 sec');
   }
 
   upsertSearchAttributes({
